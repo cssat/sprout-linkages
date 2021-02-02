@@ -9,6 +9,6 @@ There are three main scripts in this repo:
 
 NOTES: 
 
-* The linkage fields directory contains a list of fields that are used to streamline the unioning of source data across multiple years and schemas. 
-* The raw data directory contains a file structure that is expected by the various scripts. Restricted data will be downloaded into these directories when the scripts are run by authorized persons. **DO NOT remove the `.gitignore` files from these directories!**
+* The `linkage_fields` directory contains a list of fields that are used to streamline the unioning of source data across multiple years and schemas. 
+* The `raw_data` directory contains a file structure that is expected by the various scripts. Restricted data will be downloaded into these directories when the scripts are run by authorized persons. **DO NOT remove the `.gitignore` files from these directories!**
 * The `prep_for_glue.R` script only produces unioned files for parents and children pulled from birth and chars data. This logic should be repeated with Famlink and death data once we are satisfied with the matches across birth and chars data. 
