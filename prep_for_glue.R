@@ -1834,6 +1834,7 @@ mothers <- children %>%
   ) 
 
 fathers <- children %>%
+  filter(toupper(substr(tx_dad_first_name,1,5)) != "NONE ") %>% 
   mutate(
     tx_record_relation = "father",
     id_conglomerate = paste0(id_source_record, tx_record_relation),
@@ -1996,6 +1997,8 @@ save(patients,file="patients.Rdata")
 
 # Put everybody together. Remove punctuation and spaces from names. Create 
 # truncated name fields.
+# 1/1/2022 Ensure names are all upper case. CHARS has only middle initial,
+# so truncated middle name should be 1 character instead of 2.
 rodis_people <- bind_rows(
   children,
   mothers,
@@ -2003,22 +2006,22 @@ rodis_people <- bind_rows(
   patients,
   famlink_for_glue,
   death_tolink) %>% 
-  mutate(tx_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_last_name),
-         tx_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_maiden_name),
-         tx_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_first_name),
-         tx_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_middle_name),
-         tx_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_suffix_name),
-         tx_mom_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_last_name),
-         tx_mom_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_maiden_name),
-         tx_mom_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_first_name),
-         tx_mom_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_middle_name),
-         tx_dad_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_last_name),
-         tx_dad_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_suffix_name),
-         tx_dad_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_first_name),
-         tx_dad_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_middle_name),
-         tx_last_2 = substr(tx_last_name,1,2),
-         tx_first_2 = substr(tx_first_name,1,2),
-         tx_middle_2 = substr(tx_middle_name,1,2),
+  mutate(toupper(tx_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_last_name)),
+         toupper(tx_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_maiden_name)),
+         toupper(tx_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_first_name)),
+         toupper(tx_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_middle_name)),
+         toupper(tx_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_suffix_name)),
+         toupper(tx_mom_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_last_name)),
+         toupper(tx_mom_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_maiden_name)),
+         toupper(tx_mom_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_first_name)),
+         toupper(tx_mom_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_middle_name)),
+         toupper(tx_dad_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_last_name)),
+         toupper(tx_dad_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_suffix_name)),
+         toupper(tx_dad_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_first_name)),
+         toupper(tx_dad_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_middle_name)),
+         toupper(tx_last_2 = substr(tx_last_name,1,2)),
+         toupper(tx_first_2 = substr(tx_first_name,1,2)),
+         toupper(tx_middle_2 = substr(tx_middle_name,1,1)),
          dt_birth_yr = ifelse(dt_birth_yr == "" | is.na(dt_birth_yr),
                               substr(dt_birth,1,4),
                               dt_birth_yr),
