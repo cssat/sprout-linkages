@@ -20,12 +20,19 @@ library(aws.s3)
 #library(aws.signature)
 
 # Run these lines one at a time (interactive mode)
-access_key_id <- readline("Enter your AWS access key ID (20-character code): ")
-secret_access_key <- readline("Enter your AWS secret access key: ")
+# access_key_id <- readline("Enter your AWS access key ID (20-character code): ")
+# secret_access_key <- readline("Enter your AWS secret access key: ")
+# 
+# Sys.setenv(
+#   "AWS_ACCESS_KEY_ID" = access_key_id,
+#   "AWS_SECRET_ACCESS_KEY" = secret_access_key,
+#   "AWS_DEFAULT_REGION" = "us-west-2")
 
+# Or read your credential file
+aws_credentials <- read_csv("H:/RODIS/CSSAT/AWS/ksegar_aws_credentials.csv")
 Sys.setenv(
-  "AWS_ACCESS_KEY_ID" = access_key_id,
-  "AWS_SECRET_ACCESS_KEY" = secret_access_key,
+  "AWS_ACCESS_KEY_ID" = aws_credentials$`Access key ID`,
+  "AWS_SECRET_ACCESS_KEY" = aws_credentials$`Secret access key`,
   "AWS_DEFAULT_REGION" = "us-west-2")
 
 s3sync(path = "H:/RODIS/CSSAT/data_raw/original files/birth",

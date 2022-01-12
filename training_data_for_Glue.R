@@ -22,6 +22,55 @@
 library(tidyverse)
 library(readxl)
 
+# Get match sets from notes on issues with Glue runs.
+match_sets_for_training <- read_xlsx("H:/RODIS/CSSAT/data_working/rodis_people_precision_8_notes.xlsx",
+                                     col_types = c("text","text","text")) %>% 
+  mutate(run = "1640930597366") %>% 
+  bind_rows(read_xlsx("H:/RODIS/CSSAT/data_working/rodis_people_precision_9_notes.xlsx",
+                      col_types = c("text","text","text"))) %>% 
+  mutate(run = ifelse(is.na(run),
+                  "1641022561001",
+                  run))
+
+load("H:/RODIS/CSSAT/data_working/glue_run_1640930597366.Rdata")
+training_8 <- run_latest %>% 
+  filter(match_id %in% match_sets_for_training$match_id[match_sets_for_training$run == "1640930597366"])
+
+load("H:/RODIS/CSSAT/data_working/glue_run_1641022561001.Rdata")
+training_9 <- run_latest_9 %>% 
+  filter(match_id %in% match_sets_for_training$match_id[match_sets_for_training$run == "1641022561001"])
+
+write_csv(bind_rows(training_8,training_9),
+          "H:/RODIS/CSSAT/data_working/training_20220111.csv",
+          na = "")
+
+# Labels for new transform working with admission/discharge dates and 
+# dx from CHARS.
+labels <- read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b656404632009a9f69ef4fb961d_labels_2022-01-12_00_17_57_c042df6e-c93b-45f1-88f3-402399cf10dc.csv",
+                   col_types = cols(tx_suffix_name = col_character(),
+                                    dt_mom_dob_mo = col_integer(),
+                                    dt_mom_dob_da = col_integer(),
+                                    dt_dad_dob_mo = col_integer(),
+                                    dt_dad_dob_da = col_integer(),
+                                    dt_birth_mo = col_integer(),
+                                    dt_birth_da = col_integer(),
+                                    dt_cdob_mo = col_integer(),
+                                    dt_cdob_da = col_integer(),
+                                    tx_reported_sex_or_gender = col_character())) %>% 
+  bind_rows(read_csv("H:/RODIS/CSSAT/data_working/rodis_people_new_matches_precision_8.csv",
+                     col_types = cols(tx_suffix_name = col_character(),
+                                      dt_mom_dob_mo = col_integer(),
+                                      dt_mom_dob_da = col_integer(),
+                                      dt_dad_dob_mo = col_integer(),
+                                      dt_dad_dob_da = col_integer(),
+                                      dt_birth_mo = col_integer(),
+                                      dt_birth_da = col_integer(),
+                                      dt_cdob_mo = col_integer(),
+                                      dt_cdob_da = col_integer(),
+                                      tx_reported_sex_or_gender = col_character()))) %>% 
+  filter(!is.na(labeling_set_id))
+
+
 # Get labels exported from Glue
 labels <- read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b656404632009a9f69ef4fb961d_labels_2021-12-10_04_39_26_9fcb5dfa-2452-44ef-89f7-cff2195ef087.csv",
                    col_types = cols(tx_suffix_name = col_character(),

@@ -18,6 +18,7 @@
 ######################################################################
 
 library(summarytools)
+library(haven)
 options("scipen" = 20)
 
 # Make the negative bcertnums into negative IDs in order to avoid

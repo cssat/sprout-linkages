@@ -21,8 +21,18 @@ library(readxl)
 
 library(lubridate)
 
-# create people files blocked on gender 
-# for subsequent linkages on AWS glue
+# Diagnosis codes from old BERD table, presumably from CHARS birth linked files.
+# These should help match the twins in the years CHARS has truncated names.
+old_berd_dx <- read_csv("../data_working/old_rodis_berd_dx_5.csv",
+                        na = "NULL")
+
+# This file has the birth certificate numbers matched to the bc_uni identifier
+# from the BERD table.
+berd_bcert <- read_sas("../data_working/berd_bc_uni.sas7bdat") %>% 
+  mutate(bcert = ifelse(bcertnum>0,
+                        (file_year * 1000000) + bcertnum,
+                        -1 * ((file_year * 1000000) - bcertnum)))
+
 
 # Skip all this and go to load statement for a shortcut.
 
@@ -1246,13 +1256,18 @@ famlink_invalid_last <- c("UNK",
 ca_ods_alleg_removal <- read_csv("./raw_data/famlink/ca_ods_allegation_removal.csv",
                                  na = "NULL")
 
-# All persons involved in allegations or removals
+# All persons involved in allegations or removals. There are 24,074 individuals who
+# appear as both child and parent in the list of allegations. Some of these people
+# will be too old to be a child in our sample, but for now leave them flagged as
+# child. Can correct for birth date later.
 ca_ods_id_prsn <- ca_ods_alleg_removal %>% 
   select(child_id) %>% 
   rename(ID_PRSN = child_id) %>% 
+  mutate(fl_child = 1) %>% 
   bind_rows(ca_ods_alleg_removal %>% select(parent_id) %>% rename(ID_PRSN = parent_id)) %>% 
+  mutate(fl_child = ifelse(is.na(fl_child),0,1)) %>% 
   group_by(ID_PRSN) %>% 
-  count() %>% 
+  summarise(fl_child = max(fl_child)) %>% 
   ungroup()
 
 # Limit to people involved in allegations or removals.
@@ -1260,11 +1275,12 @@ ca_ods_id_prsn <- ca_ods_alleg_removal %>%
 # Fill in gender if blank and a gendered prefix is specified.
 # 12/24/2021 exclude over 2000 records for unborn child and ~ 275 "UNKNOWN CHILD"
 famlink_people <- famlink %>% 
-  filter(ID_PRSN %in% ca_ods_id_prsn$ID_PRSN & !toupper(NM_LAST) %in% famlink_invalid_last &
+  inner_join(ca_ods_id_prsn, by = "ID_PRSN") %>% 
+  filter(!toupper(NM_LAST) %in% famlink_invalid_last &
            toupper(substr(NM_FIRST,1,6)) != "UNBORN" &
            (paste0(toupper(trimws(NM_FIRST, "both")),toupper(trimws(NM_LAST, "both"))) != "UNKNOWNCHILD")) %>% 
   select(ID_PEOPLE_DIM, ID_PRSN, NM_LAST, NM_FIRST, NM_MIDDLE, NM_MIDDLE_INTL, NM_SFX,
-         DT_BIRTH, DT_DEATH, CD_GNDR, NM_PRFX, ID_PEOPLE_DIM_MOM, ID_PRSN_MOM, 
+         fl_child, DT_BIRTH, DT_DEATH, CD_GNDR, NM_PRFX, ID_PEOPLE_DIM_MOM, ID_PRSN_MOM, 
          ID_PEOPLE_DIM_DAD, ID_PRSN_DAD) %>% 
   mutate(id_conglomerate = paste0(ID_PEOPLE_DIM,"famlink"),
          id_source_record = as.character(ID_PEOPLE_DIM),
@@ -1377,11 +1393,12 @@ famlink_for_glue <- famlink_people %>%
     tx_dad_suffix_name,
     tx_mom_last_name,
     tx_mom_first_name,
-    tx_mom_middle_name
+    tx_mom_middle_name,
+    fl_child
   )
 save(famlink_for_glue,file="famlink_for_glue.Rdata")
 
-#load("famlink_for_glue.Rdata")
+load("famlink_for_glue.Rdata")
 
 # 4/29/2021 process death records.
 # There are 9 DOBs that fail to parse. They are all from 2016-2017 and have 99 entered as month or day,
@@ -1390,7 +1407,7 @@ save(famlink_for_glue,file="famlink_for_glue.Rdata")
 death <- read_linkage_data(pii_type = "death_name")
 save(death,file="death.Rdata")
 
-#load("death.Rdata")
+load("death.Rdata")
 # 12/9/2021: Fix accidental NA: Date formats changed in 2010 from mm/dd/yyyy to yyyymmdd.
 death_tolink <- death %>% 
   mutate(    
@@ -1443,7 +1460,7 @@ death_tolink <- death %>%
 birth <- read_linkage_data(pii_type = "birth")
 save(birth,file="birth.Rdata")
 
-#load("birth.Rdata")
+load("birth.Rdata")
 # Data dictionary does not contain documentation on some variables, like
 # Child_Calculated_Ethnicity (codes look like Mother_Hispanic) and 
 # Child_Calculated_Race (codes look like Mother_Race_Calculation).
@@ -1660,6 +1677,9 @@ child2017 <- birth %>%
 
 children <- birth %>%
   filter(as.numeric(str_extract(source_data,"(?<=bir)[[:digit:]]{4}")) < 2017) %>% 
+  mutate(bcert = as.numeric(CERT_NUM)) %>% 
+  left_join(berd_bcert, by = "bcert") %>% 
+  left_join(old_berd_dx %>% select(-file_year), by = "bc_uni") %>% 
   mutate(
     year = as.numeric(str_extract(source_data,"(?<=bir)[[:digit:]]{4}")),
     id_source_record = CERT_NUM,
@@ -1720,6 +1740,12 @@ children <- birth %>%
     dt_youngest_maternal_sibling_birth = DATE_LAST_BIRTH,
     fl_child_death_in_hospital = ifelse(PERSON_ALIVE_AT_DISCHARGE == "N", 1, 0)
   ) %>%
+  rename(    dx1 = cbdiag1,
+             dx2 = cbdiag2,
+             dx3 = cbdiag3,
+             dx4 = cbdiag4,
+             dx5 = cbdiag5
+  ) %>% 
   select(
     year,
     id_source_record,
@@ -1772,7 +1798,17 @@ children <- birth %>%
     dt_mom_dob,
     fl_child_death_cert_oos,
     dt_youngest_maternal_sibling_birth,
-    fl_child_death_in_hospital
+    fl_child_death_in_hospital,
+    dx1,
+    dx2,
+    dx3,
+    dx4,
+    dx5,
+    cmdiag1,
+    cmdiag2,
+    cmdiag3,
+    cmdiag4,
+    cmdiag5
   ) %>% 
   bind_rows(child2017) %>% 
   mutate(id_conglomerate = paste0(id_source_record, tx_record_relation))
@@ -1830,8 +1866,13 @@ mothers <- children %>%
     fl_any_white_mom = NA,
     fl_child_death_cert_oos = NA,
     dt_youngest_maternal_sibling_birth = NA,
-    fl_child_death_in_hospital = NA
-  ) 
+    fl_child_death_in_hospital = NA,
+    dx1 = cmdiag1,
+    dx2 = cmdiag2,
+    dx3 = cmdiag3,
+    dx4 = cmdiag4,
+    dx5 = cmdiag5
+  )
 
 fathers <- children %>%
   filter(toupper(substr(tx_dad_first_name,1,5)) != "NONE ") %>% 
@@ -1892,7 +1933,7 @@ fathers <- children %>%
 
 # The raw files take a long time to read. Use the saved multi-year data set once
 # it exists.
-patients <- read_linkage_data(pii_type = "chars") %>%
+patients <- read_linkage_data(pii_type = "chars") %>% 
   mutate(
     year = as.numeric(str_extract(source_data,"[[:digit:]]{4}(?=\\.sas)")),
     id_source_record = SEQ_NO_ENC,
@@ -1941,8 +1982,15 @@ patients <- read_linkage_data(pii_type = "chars") %>%
     fl_any_white_mom = NA,
     fl_child_death_cert_oos = NA,
     dt_youngest_maternal_sibling_birth = NA,
-    fl_child_death_in_hospital = NA
+    fl_child_death_in_hospital = NA,
+    dt_adm = as.character(format(ADM_DATE, "%Y%m%d")),
+    dt_dis = as.character(format(DIS_DATE, "%Y%m%d"))
   )  %>%
+  rename(dx1 = DIAG1,
+         dx2 = DIAG2,
+         dx3 = DIAG3,
+         dx4 = DIAG4,
+         dx5 = DIAG5) %>% 
   select(
     year,
     id_source_record,
@@ -1990,10 +2038,17 @@ patients <- read_linkage_data(pii_type = "chars") %>%
     dt_mom_dob,
     fl_child_death_cert_oos,
     dt_youngest_maternal_sibling_birth,
-    fl_child_death_in_hospital
+    fl_child_death_in_hospital,
+    dt_adm,
+    dt_dis,
+    dx1,
+    dx2,
+    dx3,
+    dx4,
+    dx5
   )
 save(patients,file="patients.Rdata")
-#load("patients.Rdata")
+load("patients.Rdata")
 
 # Put everybody together. Remove punctuation and spaces from names. Create 
 # truncated name fields.
@@ -2006,22 +2061,22 @@ rodis_people <- bind_rows(
   patients,
   famlink_for_glue,
   death_tolink) %>% 
-  mutate(toupper(tx_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_last_name)),
-         toupper(tx_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_maiden_name)),
-         toupper(tx_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_first_name)),
-         toupper(tx_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_middle_name)),
-         toupper(tx_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_suffix_name)),
-         toupper(tx_mom_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_last_name)),
-         toupper(tx_mom_maiden_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_maiden_name)),
-         toupper(tx_mom_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_first_name)),
-         toupper(tx_mom_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_mom_middle_name)),
-         toupper(tx_dad_last_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_last_name)),
-         toupper(tx_dad_suffix_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_suffix_name)),
-         toupper(tx_dad_first_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_first_name)),
-         toupper(tx_dad_middle_name = gsub("[[:punct:]]|[[:space:]]","",tx_dad_middle_name)),
-         toupper(tx_last_2 = substr(tx_last_name,1,2)),
-         toupper(tx_first_2 = substr(tx_first_name,1,2)),
-         toupper(tx_middle_2 = substr(tx_middle_name,1,1)),
+  mutate(tx_last_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_last_name)),
+         tx_maiden_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_maiden_name)),
+         tx_first_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_first_name)),
+         tx_middle_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_middle_name)),
+         tx_suffix_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_suffix_name)),
+         tx_mom_last_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_mom_last_name)),
+         tx_mom_maiden_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_mom_maiden_name)),
+         tx_mom_first_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_mom_first_name)),
+         tx_mom_middle_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_mom_middle_name)),
+         tx_dad_last_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_dad_last_name)),
+         tx_dad_suffix_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_dad_suffix_name)),
+         tx_dad_first_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_dad_first_name)),
+         tx_dad_middle_name = toupper(gsub("[[:punct:]]|[[:space:]]","",tx_dad_middle_name)),
+         tx_last_2 = toupper(substr(tx_last_name,1,2)),
+         tx_first_2 = toupper(substr(tx_first_name,1,2)),
+         tx_middle_i = toupper(substr(tx_middle_name,1,1)),
          dt_birth_yr = ifelse(dt_birth_yr == "" | is.na(dt_birth_yr),
                               substr(dt_birth,1,4),
                               dt_birth_yr),
@@ -2057,7 +2112,17 @@ rodis_people <- bind_rows(
                                 dt_dad_dob_mo),
          dt_dad_dob_da = ifelse(dt_dad_dob_da == "" | is.na(dt_dad_dob_da),
                                 substr(dt_dad_dob,7,8),
-                                dt_dad_dob_da))
+                                dt_dad_dob_da),
+         dt_adm_yr = substr(dt_adm,1,4),
+         dt_adm_mo = substr(dt_adm,5,6),
+         dt_adm_da = substr(dt_adm,7,8),
+         dt_dis_yr = substr(dt_dis,1,4),
+         dt_dis_mo = substr(dt_dis,5,6),
+         dt_dis_da = substr(dt_dis,7,8),
+         dt_death_yr = substr(dt_death,1,4),
+         dt_death_mo = substr(dt_death,5,6),
+         dt_death_da = substr(dt_death,7,8)
+  )
 # Save copy with data types intact so we don't have to read the CHARS data again.
 save(rodis_people,file="rodis_people.Rdata")
 
@@ -2091,13 +2156,27 @@ rodis_people_glue <- rodis_people %>%
              dt_youngest_maternal_sibling_birth,
              tx_last_2,
              tx_first_2,
-             tx_middle_2,
+             tx_middle_i,
              dt_birth_yr,
              dt_birth_mo,
              dt_birth_da,
              dt_cdob_yr,
              dt_cdob_mo,
-             dt_cdob_da
+             dt_cdob_da,
+             dt_adm_yr,
+             dt_adm_mo,
+             dt_adm_da,
+             dt_dis_yr,
+             dt_dis_mo,
+             dt_dis_da,
+             dx1,
+             dx2,
+             dx3,
+             dx4,
+             dx5,
+             dt_death_yr,
+             dt_death_mo,
+             dt_death_da
            )
 
 # Write data back to Google for linkage work on AWS Glue
