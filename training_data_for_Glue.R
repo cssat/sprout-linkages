@@ -43,7 +43,9 @@ training_9 <- run_latest_9 %>%
 write_csv(bind_rows(training_8,training_9),
           "H:/RODIS/CSSAT/data_working/training_20220111.csv",
           na = "")
-
+# Manually assign labelling set IDs and labels, then add the file to exported labels and join to
+# new rodis_people_glue file with new columns.
+  
 # Labels for new transform working with admission/discharge dates and 
 # dx from CHARS.
 labels <- read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b656404632009a9f69ef4fb961d_labels_2022-01-12_00_17_57_c042df6e-c93b-45f1-88f3-402399cf10dc.csv",
@@ -68,9 +70,48 @@ labels <- read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b65640
                                       dt_cdob_mo = col_integer(),
                                       dt_cdob_da = col_integer(),
                                       tx_reported_sex_or_gender = col_character()))) %>% 
+  bind_rows(read_csv("H:/RODIS/CSSAT/data_working/training_20220111.csv",
+                   col_types = cols(tx_suffix_name = col_character(),
+                                    dt_mom_dob_mo = col_integer(),
+                                    dt_mom_dob_da = col_integer(),
+                                    dt_dad_dob_mo = col_integer(),
+                                    dt_dad_dob_da = col_integer(),
+                                    dt_birth_mo = col_integer(),
+                                    dt_birth_da = col_integer(),
+                                    dt_cdob_mo = col_integer(),
+                                    dt_cdob_da = col_integer(),
+                                    tx_reported_sex_or_gender = col_character()))) %>%
+  bind_rows(read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b656404632009a9f69ef4fb961d_labels_2022-01-21_03_59_07_375a65ee-beb8-4379-bf96-8a7e0510d910.csv",
+                     col_types = cols(tx_suffix_name = col_character(),
+                                      dt_mom_dob_mo = col_integer(),
+                                      dt_mom_dob_da = col_integer(),
+                                      dt_dad_dob_mo = col_integer(),
+                                      dt_dad_dob_da = col_integer(),
+                                      dt_birth_mo = col_integer(),
+                                      dt_birth_da = col_integer(),
+                                      dt_cdob_mo = col_integer(),
+                                      dt_cdob_da = col_integer(),
+                                      tx_reported_sex_or_gender = col_character()))) %>% 
   filter(!is.na(labeling_set_id))
 
+load("rodis_people_glue.Rdata")
 
+# There is some duplication in the labels file (two exports from Glue with the same labels).
+# Select distinct labelling sets.
+label_rodis_people_glue <- labels %>% 
+  distinct(labeling_set_id, label, id_conglomerate) %>% 
+  inner_join(rodis_people_glue, by = "id_conglomerate")
+write_csv(label_rodis_people_glue,"../AWS/rodis_people_glue/rodis_people_labels_20220122.csv",na="")
+write_csv(label_rodis_people_glue %>% 
+            filter(tx_record_relation == "patient") %>% 
+            group_by(labeling_set_id) %>% 
+            mutate(labeling_set_n = n()) %>% 
+            filter(labeling_set_n > 1) %>% 
+            ungroup() %>% 
+            select(-labeling_set_n),
+          "../AWS/rodis_people_glue/rodis_chars_labels_20220122.csv",na="")
+
+# 1/22/2022 don't need anything beyond here anymore
 # Get labels exported from Glue
 labels <- read_csv("H:/RODIS/CSSAT/AWS/rodis_people_glue/tfm-2cddc271329f9b656404632009a9f69ef4fb961d_labels_2021-12-10_04_39_26_9fcb5dfa-2452-44ef-89f7-cff2195ef087.csv",
                    col_types = cols(tx_suffix_name = col_character(),

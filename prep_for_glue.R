@@ -2054,6 +2054,8 @@ load("patients.Rdata")
 # truncated name fields.
 # 1/1/2022 Ensure names are all upper case. CHARS has only middle initial,
 # so truncated middle name should be 1 character instead of 2.
+# 1/20/2022 One death date is recorded as occurring in the year 4112. No
+# idea how to correct that, leave it blank.
 rodis_people <- bind_rows(
   children,
   mothers,
@@ -2119,6 +2121,11 @@ rodis_people <- bind_rows(
          dt_dis_yr = substr(dt_dis,1,4),
          dt_dis_mo = substr(dt_dis,5,6),
          dt_dis_da = substr(dt_dis,7,8),
+         dt_death = ifelse(str_trim(dt_death,
+                                    side = "both") == "" |
+                             substr(dt_death,1,1) == "4",
+                           NA, 
+                           dt_death),
          dt_death_yr = substr(dt_death,1,4),
          dt_death_mo = substr(dt_death,5,6),
          dt_death_da = substr(dt_death,7,8)
@@ -2127,7 +2134,7 @@ rodis_people <- bind_rows(
 save(rodis_people,file="rodis_people.Rdata")
 
 # Use this code if reading the above file instead of the individual raw files
-#load("rodis_people.Rdata")
+load("rodis_people.Rdata")
 
 rodis_people_glue <- rodis_people %>% 
   select(    id_conglomerate,
@@ -2163,20 +2170,14 @@ rodis_people_glue <- rodis_people %>%
              dt_cdob_yr,
              dt_cdob_mo,
              dt_cdob_da,
-             dt_adm_yr,
-             dt_adm_mo,
-             dt_adm_da,
-             dt_dis_yr,
-             dt_dis_mo,
-             dt_dis_da,
+             dt_adm,
+             dt_dis,
              dx1,
              dx2,
              dx3,
              dx4,
              dx5,
-             dt_death_yr,
-             dt_death_mo,
-             dt_death_da
+             dt_death
            )
 
 # Write data back to Google for linkage work on AWS Glue
@@ -2189,3 +2190,12 @@ drive_upload(
   name = "rodis_people_glue.csv",
   path = rodis_pii_dribble
 )
+# 1/18/2022 split data by source for incremental matching approach
+write_csv(rodis_people_glue %>% filter(tx_record_relation == "patient"), 
+          "rodis_people_chars.csv",na="")
+write_csv(rodis_people_glue %>% filter(tx_record_relation %in% c("child","mother","father")), 
+          "rodis_people_birth.csv",na="")
+write_csv(rodis_people_glue %>% filter(tx_record_relation == "famlink"), 
+          "rodis_people_famlink.csv",na="")
+write_csv(rodis_people_glue %>% filter(tx_record_relation == "death"), 
+          "rodis_people_death.csv",na="")

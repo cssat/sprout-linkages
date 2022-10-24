@@ -99,8 +99,9 @@ birth_berd_2017 <- birth_raw %>%
          birthyr = as.numeric(Date_of_Birth_Year),
          birthmo = as.numeric(Date_of_Birth_Month),
          birthdy = as.numeric(Date_of_Birth_Day),
-         trib_res = ifelse(`Tribe Literal` %in% c("UNK","UNKNOWN"),
+         birhour = as.numeric(substr(Time_of_Birth,1,2)),
                            999,
+         trib_res = ifelse(`Tribe Literal` %in% c("UNK","UNKNOWN"),
                            trib_res),
          momle8ed = Mother_Educ_8th_Grade_or_Less,
          dadle8ed = Father_Educ_8th_Grade_or_Less,
@@ -159,11 +160,23 @@ birth_berd_2017 <- birth_raw %>%
          lstfetyr = Other_Preg_Outcomes_Year,
          lstfetmo = Other_Preg_Outcomes_Month,
          delivpay = recode(Source_of_Payment, `4` = 6, `6` = 4),
+         circumf = Head_Circumference,
+         wghtdelv = Mother_Weight_at_Delivery,
          gestest = Gestation_Estimate,
          prenatvs = Number_Prenatal_Visits,
          numatbir = Plurality,
          order = Birth_Order,
          birgrams = Birth_Weight_Grams,
+         momtrans = recode(Mother_Transfer, 
+                           "N" = 0,
+                           "Y" = 8,
+                           "U" = 9),
+         inftrans = recode(Child_Transfer, 
+                           "N" = 1,
+                           "Y" = 2,
+                           "U" = 3),
+         prewght = Mother_Weight_Prior,
+         wtgain = Mother_Weight_Gain,
          pripreg = ifelse(Prior_Live_Births_Living < 99 & Prior_Live_Births_Deceased < 99 &
                             Other_Preg_Outcomes < 99,
                           Prior_Live_Births_Living + Prior_Live_Births_Deceased + Other_Preg_Outcomes,
@@ -242,6 +255,14 @@ birth_berd_2017 <- birth_raw %>%
          PARITY = ifelse(Prior_Live_Births_Living < 99 & Prior_Live_Births_Deceased < 99,
                          Prior_Live_Births_Living + Prior_Live_Births_Deceased,
                          NA),
+         momhgt = (Mother_Height_Feet * 100) + Mother_Height_Inches,
+         # bmi = (weight * .454)/(height in inches * .0254)^2
+         bmi = ifelse(momhgt > 100 & momhgt < 900 & as.numeric(substr(momhgt,2,3)) < 99
+                      & prewght >= 20 & prewght <= 500,
+                      (prewght *.454) / 
+                        ((((as.numeric(substr(as.character(momhgt),1,1)) * 12) +
+                             as.numeric(substr(as.character(momhgt),2,3))) * .0254)^2),
+                      NA),
          moindex4 = ifelse(Number_Prenatal_Visits >= 0 & Number_Prenatal_Visits <= 90,
                            case_when(Month_Prenatal_Care_Began >= 1 & Month_Prenatal_Care_Began <=2 ~ 4,
                                      Month_Prenatal_Care_Began >= 3 & Month_Prenatal_Care_Began <=4 ~ 3,
@@ -627,6 +648,7 @@ birth_berd_bedrock <- birth_raw %>%
                   birthyr = as.numeric(substr(PERSON_DOB,1,4)),
                   birthmo = as.numeric(substr(PERSON_DOB,5,6)),
                   birthdy = as.numeric(substr(PERSON_DOB,7,8)),
+                  birhour = as.numeric(substr(BIRTH_TIME,1,2)),
                   trib_res = ifelse(year >= 2003,
                                     as.numeric(MO_RES_TRIBAL_RESV_CODE),
                                     NA),
@@ -785,11 +807,31 @@ birth_berd_bedrock <- birth_raw %>%
                                        SOURCE_OF_PAYMENT == "8" ~ 8,
                                        SOURCE_OF_PAYMENT == "9" ~ 9,
                                        SOURCE_OF_PAYMENT == "U" ~ 9),
+                  circumf = ifelse(year >= 2003,
+                                   as.numeric(HEAD_CIRCUM_CM),
+                                   NA),
+                  wghtdelv = ifelse(year >= 2003,
+                                    as.numeric(MO_WGT_AT_DELIVERY),
+                                    NA),
                   gestest = as.numeric(EST_GEST_PERIOD),
                   prenatvs = as.numeric(NUM_PRENATAL_VISITS),
                   numatbir = as.numeric(NUM_AT_BIRTH),
                   order = as.numeric(BIRTH_ORDER),
                   birgrams = as.numeric(BIRTH_WEIGHT_GRAMS),
+                  momtrans = case_when(MOTHER_TRANSFERRED == "0" ~ 0,
+                                       MOTHER_TRANSFERRED == "1" ~ 1,
+                                       MOTHER_TRANSFERRED == "2" ~ 2,
+                                       MOTHER_TRANSFERRED == "3" ~ 3,
+                                       MOTHER_TRANSFERRED == "8" ~ 8,
+                                       MOTHER_TRANSFERRED == "9" ~ 9,
+                                       MOTHER_TRANSFERRED == "N" ~ 0,
+                                       MOTHER_TRANSFERRED == "Y" ~ 8,
+                                       MOTHER_TRANSFERRED == "U" ~ 9),
+                  inftrans = case_when(BABY_TRANSFERRED == "N" ~ 1,
+                                       BABY_TRANSFERRED == "Y" ~ 2,
+                                       BABY_TRANSFERRED == "U" ~ 3),
+                  prewght = as.numeric(WEIGHT_BEFORE_PREG),
+                  wtgain = as.numeric(WEIGHT_GAINED_IN_PREG),
                   num_other_preg_outcomes = ifelse(year < 2003,
                                                    ifelse(is.numeric(SPONTAN_20WKS_OR_GT) < 88 & 
                                                             is.numeric(SPONTAN_LT_20WKS) < 88 &
@@ -889,6 +931,19 @@ birth_berd_bedrock <- birth_raw %>%
                                   as.numeric(PRIOR_NOW_LIVING) +
                                     as.numeric(PRIOR_DEAD),
                                   NA),
+                  momhgt = ifelse(as.numeric(MO_HEIGHT_FT) > 0 & 
+                                    as.numeric(MO_HEIGHT_FT) < 9 & 
+                                    as.numeric(MO_HEIGHT_IN) < 99,
+                                  (as.numeric(MO_HEIGHT_FT) * 100) +
+                                    as.numeric(MO_HEIGHT_IN),
+                                  NA),
+                  # bmi = (weight * .454)/(height in inches * .0254)^2
+                  bmi = ifelse(momhgt > 100 & momhgt < 900 & as.numeric(substr(momhgt,2,3)) < 99
+                               & prewght >= 20 & prewght <= 500,
+                               (prewght *.454) / 
+                                 ((((as.numeric(substr(as.character(momhgt),1,1)) * 12) +
+                                      as.numeric(substr(as.character(momhgt),2,3))) * .0254)^2),
+                               NA),
                   moindex4 = ifelse(as.numeric(NUM_PRENATAL_VISITS) >= 0 & as.numeric(NUM_PRENATAL_VISITS) <= 90,
                                     case_when(as.numeric(MONTH_PRENATAL_CARE_BGN) >= 1 & as.numeric(MONTH_PRENATAL_CARE_BGN) <=2 ~ 4,
                                               as.numeric(MONTH_PRENATAL_CARE_BGN) >= 3 & as.numeric(MONTH_PRENATAL_CARE_BGN) <=4 ~ 3,
@@ -1281,3 +1336,4 @@ birth_berd <- birth_berd_bedrock %>%
                         as.numeric(State_File_Number))) %>% 
   select(bcert, CERT_NUM, State_File_Number, source_data, year: sga, howlgm,
          CERT_TYPE:WIC_BENEFITS, Birth_Cert_Type:Res_Geo_School_District)
+save(birth_berd,file = "birth_berd.Rdata")
